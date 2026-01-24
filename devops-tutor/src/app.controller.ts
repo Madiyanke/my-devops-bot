@@ -1,4 +1,10 @@
-import { Body, Controller, Post, ValidationPipe, UsePipes } from '@nestjs/common';
+import {
+  Body,
+  Controller,
+  Post,
+  ValidationPipe,
+  UsePipes,
+} from '@nestjs/common';
 import { AppService } from './app.service';
 import { ChatDto } from './dtos/chat.dto';
 

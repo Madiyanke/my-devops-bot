@@ -44,7 +44,9 @@ export class AppService {
       return content;
     } catch (error) {
       this.logger.error('Erreur OpenAI', error);
-      throw new Error('Désolé, je ne peux pas accéder à ma base de connaissances pour le moment.');
+      throw new Error(
+        'Désolé, je ne peux pas accéder à ma base de connaissances pour le moment.',
+      );
     }
   }
 }
