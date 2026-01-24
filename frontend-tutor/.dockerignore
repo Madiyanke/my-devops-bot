@@ -95,16 +95,6 @@ temp/
 .cache/
 
 # ============================================
-# Vue/Vite Specific
-# ============================================
-public/
-src/assets/
-src/components/icons/
-src/components/HelloWorld.vue
-src/components/TheWelcome.vue
-src/components/WelcomeItem.vue
-
-# ============================================
 # ESLint & Prettier
 # ============================================
 .eslintrc*
