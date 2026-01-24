@@ -161,7 +161,7 @@ jobs:
           platforms: linux/amd64,linux/arm64
       
       - name: Image digest
-        run: echo "Image digest: ${{ steps.build.outputs.digest }}"
+        run: echo Image digest ${{ steps.build.outputs.digest }}
 
   # ============================================
   # JOB 4: Security Scan (Optional but recommended)
