@@ -103,9 +103,8 @@ temp/
 eslint.config.*
 
 # ============================================
-# Vite/Build Configuration (dev only)
+# TypeScript Configuration (dev only)
 # ============================================
-vite.config.*
 tsconfig*.json
 jsconfig*.json
 
@@ -113,3 +112,4 @@ jsconfig*.json
 # Package Manager Files
 # ============================================
 # Note: package.json and package-lock.json are INCLUDED
+# vite.config.js is INCLUDED (needed for build)
