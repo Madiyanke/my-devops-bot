@@ -58,7 +58,8 @@ const sendMessage = async () => {
       content: data.tutor_response // Le backend renvoie du Markdown
     });
 
-  } catch (error) {
+    // eslint-disable-next-line no-unused-vars
+  } catch (_error) {
     messages.value.push({
       id: Date.now() + 1,
       role: 'ai',
