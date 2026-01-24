@@ -10,8 +10,8 @@
     "dev": "vite",
     "build": "vite build",
     "preview": "vite preview",
-    "lint": "eslint . --ext .vue,.js,.ts --ignore-path .gitignore",
-    "lint:ci": "eslint . --ext .vue,.js,.ts --ignore-path .gitignore --max-warnings 0",
+    "lint": "eslint . --ext .vue,.js,.ts",
+    "lint:ci": "eslint . --ext .vue,.js,.ts --max-warnings 0",
     "test": "vitest",
     "test:ci": "vitest run --coverage"
   },
