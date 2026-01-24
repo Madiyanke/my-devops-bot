@@ -103,12 +103,14 @@ temp/
 eslint.config.*
 
 # ============================================
-# TypeScript Configuration (dev only)
+# Build Configuration
 # ============================================
-tsconfig*.json
+# Note: tsconfig.json is INCLUDED (needed for NestJS build)
+jsconfig*.json
 
 # ============================================
-# Package Manager Files (keep package.json, ignore lock during build)
+# Package Manager Files
 # ============================================
-# Note: package.json is INCLUDED for npm install
+# Note: package.json and package-lock.json are INCLUDED
+ for npm install
 # package-lock.json is needed for reproducible builds
