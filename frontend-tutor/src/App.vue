@@ -41,8 +41,9 @@ const sendMessage = async () => {
   await scrollToBottom();
 
   try {
-    // 2. Appel à l'API NestJS
-    const apiUrl = import.meta.env.VITE_API_URL || 'http://localhost:3003';
+    // 2. Appel à l'API via le reverse proxy nginx (/api -> http://api:3000)
+    // En production, nginx redirige /api vers le conteneur backend
+    const apiUrl = import.meta.env.VITE_API_URL || '/api';
     const response = await fetch(`${apiUrl}/tutor/ask`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
