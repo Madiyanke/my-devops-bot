@@ -1,0 +1,28 @@
+services:
+  api:
+    image: ${DOCKER_USERNAME}/devops-tutor-api:latest
+    container_name: devops-tutor-api
+    ports:
+      - "3003:3000"
+    environment:
+      - OPENAI_API_KEY=${OPENAI_API_KEY}
+      - HTTP_PROXY=${HTTP_PROXY}
+      - HTTPS_PROXY=${HTTPS_PROXY}
+    restart: always
+    networks:
+      - app-network
+
+  web:
+    image: ${DOCKER_USERNAME}/devops-tutor-web:latest
+    container_name: devops-tutor-web
+    ports:
+      - "80:80"
+    depends_on:
+      - api
+    restart: always
+    networks:
+      - app-network
+
+networks:
+  app-network:
+    driver: bridge

@@ -1,0 +1,72 @@
+name: CD Pipeline 
+
+on:
+  push:
+    branches: [ main ]
+
+jobs:
+  # -----------------------------------------------------------
+  # JOB 1 : Build & Push (S'exécute sur les serveurs GitHub)
+  # -----------------------------------------------------------
+  build-and-push:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Login to Docker Hub
+        uses: docker/login-action@v3
+        with:
+          username: ${{ secrets.DOCKER_USERNAME }}
+          password: ${{ secrets.DOCKER_PASSWORD }}
+
+      - name: Build and push API
+        uses: docker/build-push-action@v5
+        with:
+          context: ./devops-tutor
+          push: true
+          tags: ${{ secrets.DOCKER_USERNAME }}/devops-tutor-api:latest
+
+      - name: Build and push Frontend
+        uses: docker/build-push-action@v5
+        with:
+          context: ./frontend-tutor
+          push: true
+          tags: ${{ secrets.DOCKER_USERNAME }}/devops-tutor-web:latest
+
+  # -----------------------------------------------------------
+  # JOB 2 : Deploy (S'exécute sur TON VPS via le Runner)
+  # -----------------------------------------------------------
+  deploy:
+    needs: build-and-push
+    runs-on: self-hosted
+    steps:
+      - name: Récupération de la config (Checkout)
+        uses: actions/checkout@v4
+
+      - name: Déploiement sur le serveur
+        run: |
+          echo "Démarrage du déploiement sur le VPS..."
+
+          # 1. On utilise le fichier de prod
+          cp docker-compose.prod.yml docker-compose.yml
+
+          # 2. Création du .env avec les secrets
+          # Note : On réinjecte le proxy ici pour être sûr que Docker Compose l'a
+          echo "OPENAI_API_KEY=${{ secrets.OPENAI_API_KEY }}" > .env
+          echo "HTTP_PROXY=http://cache.univ-pau.fr:3128" >> .env
+          echo "HTTPS_PROXY=http://cache.univ-pau.fr:3128" >> .env
+
+          # 3. Authentification Docker 
+          echo "${{ secrets.DOCKER_PASSWORD }}" | docker login -u "${{ secrets.DOCKER_USERNAME }}" --password-stdin
+
+          # 4. Téléchargement des nouvelles images (via le proxy système configuré en étape 2.1)
+          docker compose pull
+
+          # 5. Redémarrage des conteneurs
+          docker compose up -d --remove-orphans
+
+          # 6. Nettoyage des vieilles images (gain de place)
+          docker image prune -f
+          
+          echo "Application déployée et en ligne !"
