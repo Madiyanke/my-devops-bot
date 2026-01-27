@@ -16,7 +16,7 @@ services:
     image: ${DOCKER_USERNAME}/devops-tutor-web:latest
     container_name: devops-tutor-web
     ports:
-      - "80:80"
+      - "8099:80"
     depends_on:
       - api
     restart: always
