@@ -1,4 +1,9 @@
+version: '3.8'
+
 services:
+  # -----------------------------------------------------------------
+  # APPLICATION (Metier)
+  # -----------------------------------------------------------------
   api:
     image: ${DOCKER_USERNAME}/devops-tutor-api:latest
     container_name: devops-tutor-api
@@ -6,6 +11,7 @@ services:
       - "3003:3000"
     environment:
       - OPENAI_API_KEY=${OPENAI_API_KEY}
+      # Configuration Proxy pour NestJS (Vital pour l'UPPA)
       - HTTP_PROXY=${HTTP_PROXY}
       - HTTPS_PROXY=${HTTPS_PROXY}
     restart: always
@@ -16,13 +22,64 @@ services:
     image: ${DOCKER_USERNAME}/devops-tutor-web:latest
     container_name: devops-tutor-web
     ports:
-      - "8099:80"
+      - "8099:80" # Port Frontend choisi (Modifié selon ton snippet)
     depends_on:
       - api
     restart: always
     networks:
       - app-network
 
+  # -----------------------------------------------------------------
+  # MONITORING (Observabilité)
+  # -----------------------------------------------------------------
+  
+  # 1. Prometheus : Le Cerveau (Collecte les métriques)
+  prometheus:
+    image: prom/prometheus:latest
+    container_name: monitoring-prometheus
+    volumes:
+      # On monte le fichier de config qu'on va créer juste après
+      - ./prometheus/prometheus.yml:/etc/prometheus/prometheus.yml
+      # On persiste les données pour ne pas perdre l'historique au reboot
+      - prometheus_data:/prometheus
+    command:
+      - '--config.file=/etc/prometheus/prometheus.yml'
+    restart: always
+    networks:
+      - app-network
+
+  # 2. Node Exporter : La Sonde (Surveille le VPS lui-même : CPU, RAM, Disque)
+  node-exporter:
+    image: prom/node-exporter:latest
+    container_name: monitoring-node-exporter
+    restart: always
+    networks:
+      - app-network
+
+  # 3. Grafana : Le Tableau de Bord (Visualisation)
+  grafana:
+    image: grafana/grafana:latest
+    container_name: monitoring-grafana
+    ports:
+      - "3004:3000" # Accès via http://IP_VPS:3004
+    environment:
+      - GF_SECURITY_ADMIN_USER=admin
+      - GF_SECURITY_ADMIN_PASSWORD=admin # Tu changeras ça à la première connexion
+    volumes:
+      - grafana_data:/var/lib/grafana
+    depends_on:
+      - prometheus
+    restart: always
+    networks:
+      - app-network
+
+# -----------------------------------------------------------------
+# RESEAU & VOLUMES
+# -----------------------------------------------------------------
 networks:
   app-network:
     driver: bridge
+
+volumes:
+  prometheus_data:
+  grafana_data:
