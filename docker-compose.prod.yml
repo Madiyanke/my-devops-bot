@@ -64,7 +64,9 @@ services:
       - "3004:3000" # Accès via http://IP_VPS:3004
     environment:
       - GF_SECURITY_ADMIN_USER=admin
-      - GF_SECURITY_ADMIN_PASSWORD=admin # Tu changeras ça à la première connexion
+      - GF_SECURITY_ADMIN_PASSWORD=admin 
+      - HTTP_PROXY=${HTTP_PROXY}
+      - HTTPS_PROXY=${HTTPS_PROXY}
     volumes:
       - grafana_data:/var/lib/grafana
     depends_on:
