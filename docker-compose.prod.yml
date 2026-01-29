@@ -67,6 +67,7 @@ services:
       - GF_SECURITY_ADMIN_PASSWORD=admin 
       - HTTP_PROXY=${HTTP_PROXY}
       - HTTPS_PROXY=${HTTPS_PROXY}
+      - NO_PROXY=prometheus,api,node-exporter,localhost,127.0.0.1
     volumes:
       - grafana_data:/var/lib/grafana
     depends_on:
