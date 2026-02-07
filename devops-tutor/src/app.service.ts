@@ -25,6 +25,7 @@ export class AppService {
     this.openai = new OpenAI({
       apiKey: this.configService.get<string>('OPENAI_API_KEY'),
       httpAgent: agent,
+      imeout: 300 * 1000,
     } as any);
   }
 
