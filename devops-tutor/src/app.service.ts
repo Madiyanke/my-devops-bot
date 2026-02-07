@@ -1,6 +1,7 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import OpenAI from 'openai';
+import { HttpsProxyAgent } from 'https-proxy-agent';
 
 @Injectable()
 export class AppService {
@@ -8,23 +9,36 @@ export class AppService {
   private readonly logger = new Logger(AppService.name);
 
   constructor(private configService: ConfigService) {
+    // 1. Définition du Proxy
+    // Correction Linter : On passe à la ligne pour respecter la largeur max
+    const proxyUrl =
+      this.configService.get<string>('HTTPS_PROXY') ||
+      'http://cache.univ-pau.fr:3128';
+
+    // 2. Création de l'Agent Proxy
+    const agent = new HttpsProxyAgent(proxyUrl);
+
+    this.logger.log(`OpenAI initialisé avec le proxy : ${proxyUrl}`);
+
+    // 3. Configuration OpenAI
+    // Correction TS : "as any" force TypeScript à accepter httpAgent
     this.openai = new OpenAI({
       apiKey: this.configService.get<string>('OPENAI_API_KEY'),
-    });
+      httpAgent: agent,
+    } as any);
   }
 
   async getDevOpsAdvice(userQuestion: string): Promise<string> {
     try {
-      // Le prompt système définit la personnalité de l'IA
       const systemPrompt = `
         Tu es un Expert DevOps Senior et un excellent pédagogue.
-        Ta mission : Aider des développeurs juniors ou intermédiaires à comprendre les concepts DevOps (CI/CD, Docker, K8s, AWS, Terraform, Monitoring).
+        Ta mission : Aider des développeurs juniors ou intermédiaires à comprendre les concepts DevOps.
         
-        Règles à suivre impérativement :
+        Règles :
         1. Ton ton doit être encourageant, clair et empathique.
-        2. Utilise des analogies simples pour expliquer des concepts complexes (ex: conteneurs vs machines virtuelles).
-        3. Ne donne pas juste du code, explique le "pourquoi" et le "comment".
-        4. À la toute fin de ta réponse, tu DOIS fournir une section "📚 Pour aller plus loin" avec 2 ou 3 liens vers des ressources de qualité (documentation officielle, tutoriels reconnus, articles de blog fiables).
+        2. Utilise des analogies simples.
+        3. Ne donne pas juste du code, explique le "pourquoi".
+        4. À la fin, fournis une section "📚 Pour aller plus loin" avec 2 liens.
       `;
 
       const completion = await this.openai.chat.completions.create({
@@ -32,11 +46,10 @@ export class AppService {
           { role: 'system', content: systemPrompt },
           { role: 'user', content: userQuestion },
         ],
-        model: 'gpt-3.5-turbo', // Ou 'gpt-3.5-turbo' pour réduire les coûts
-        temperature: 0.7, // Créativité modérée pour rester pédagogique mais précis
+        model: 'gpt-3.5-turbo',
+        temperature: 0.7,
       });
 
-      // Correction : garantir que le retour n'est jamais null
       const content = completion.choices[0].message.content;
       if (!content) {
         throw new Error("Réponse vide de l'IA");
@@ -44,8 +57,11 @@ export class AppService {
       return content;
     } catch (error) {
       this.logger.error('Erreur OpenAI', error);
+      if (error instanceof Error) {
+        this.logger.error(error.message);
+      }
       throw new Error(
-        'Désolé, je ne peux pas accéder à ma base de connaissances pour le moment.',
+        'Désolé, je ne peux pas accéder à ma base de connaissances (Erreur Proxy/OpenAI).',
       );
     }
   }
