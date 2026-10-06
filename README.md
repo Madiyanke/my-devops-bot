@@ -1,139 +1,113 @@
-# DevOps Tutor AI 🤖
+# DevOps Mentor 🤖
 
 [![CI/CD Pipeline](https://github.com/YOUR_USERNAME/my-devops-bot/actions/workflows/ci.yml/badge.svg)](https://github.com/YOUR_USERNAME/my-devops-bot/actions/workflows/ci.yml)
 
-Un chatbot AI moderne pour l'apprentissage DevOps, alimenté par OpenAI, avec une interface utilisateur premium.
+Un mentor DevOps senior qui **recherche**, **vérifie** et **cite ses sources** avant de répondre.
+Chaque réponse s'appuie sur des pages réellement lues (documentation officielle en priorité) et chaque fait précis est relié à sa source `[n]`.
 
-## 🚀 Fonctionnalités
+> 📘 **Première installation ?** Suis le [guide de mise en route](docs/GUIDE.md) : clé IA, lancement, installation sur téléphone, dépannage.
+> 🚀 **Mise en production ?** Voir le [guide CI/CD et déploiement VPS](docs/DEPLOY.md).
 
-- **Chat AI Intelligent** : Questions-Réponses sur Docker, Kubernetes, CI/CD
-- **Interface Moderne** : Design gradients avec glassmorphism
-- **Architecture Microservices** : Backend NestJS + Frontend Vue.js
-- **CI/CD Automatisé** : GitHub Actions avec tests automatiques
-- **Containerisé** : Docker & Docker Compose
+## ✨ Fonctionnalités
 
-## 🛠️ Stack Technique
+- **Pipeline de recherche visible en direct** : Analyse → Recherche → Lecture → Synthèse, affiché comme un job CI.
+- **Recherche gratuite multi-moteurs** : DuckDuckGo, Wikipedia et Stack Overflow sans clé ; Tavily, Brave et SearXNG en option.
+- **Anti-hallucination** : documentation officielle classée en premier, citations cliquables, aucun flag ni version inventés, et un avertissement explicite quand les sources manquent.
+- **N'importe quelle IA** : Gemini, OpenAI, Claude, Mistral, Groq, OpenRouter, DeepSeek, xAI, Perplexity, Ollama ou toute API compatible OpenAI. La clé est détectée automatiquement.
+- **Pédagogie** : réponse structurée (En bref, Comprendre, En pratique, Pièges, Pour aller plus loin), code commenté, diagrammes Mermaid.
+- **Interface « console DevOps »** : animations anime.js, thèmes sombre et clair, historique local, streaming, copie de code.
+- **PWA installable et responsive** : ordinateur, Android et iPhone, mode hors ligne, mises à jour proposées, panneaux natifs sur mobile.
+- **Prêt pour la prod** : sondes `/health`, métriques Prometheus, image non-root, protection SSRF, rendu HTML assaini.
 
-### Backend
-- **Framework** : NestJS (Node.js)
-- **AI** : OpenAI GPT
-- **Tests** : Jest
-- **Linting** : ESLint
+## 🏗️ Architecture
 
-### Frontend
-- **Framework** : Vue.js 3 + Vite
-- **Style** : CSS (Gradients, Glassmorphism)
-- **Tests** : Vitest
-- **Linting** : ESLint + Vue plugin
-
-### DevOps
-- **Containerisation** : Docker
-- **Orchestration** : Docker Compose
-- **CI/CD** : GitHub Actions
-- **Registry** : Docker Hub
-
-## 📦 Installation
-
-### Prérequis
-
-- Docker & Docker Compose
-- Node.js 22+ (pour développement local)
-- OpenAI API Key
-
-### Configuration
-
-1. **Cloner le repository**
-```bash
-git clone https://github.com/YOUR_USERNAME/my-devops-bot.git
-cd my-devops-bot
+```mermaid
+flowchart LR
+  U[Navigateur] --> W[web: nginx + Vue]
+  W -- /api SSE --> A[api: NestJS]
+  A -- 1. plan --> L[(IA au choix)]
+  A -- 2. search --> S[DuckDuckGo / Wikipedia / Stack Overflow / Tavily…]
+  A -- 3. read --> P[Pages web]
+  A -- 4. synthèse sourcée --> L
+  Prom[Prometheus] -- /metrics --> A
 ```
 
-2. **Configurer les variables d'environnement**
-```bash
-# À la racine
-echo "OPENAI_API_KEY=your_api_key_here" > .env
+| Module | Rôle |
+|---|---|
+| `devops-tutor/src/llm` | Catalogue des fournisseurs, détection de clé, client streaming unique (protocoles OpenAI, Gemini, Anthropic) |
+| `devops-tutor/src/research` | Moteurs de recherche, classement par fiabilité, extraction du texte utile des pages |
+| `devops-tutor/src/tutor` | Pipeline, prompts (persona et règles de vérité), API SSE |
+| `frontend-tutor/src` | Interface Vue 3 : pipeline, sources, rendu Markdown sécurisé, paramètres |
 
-# Frontend
-echo "VITE_API_URL=http://localhost:3003" > frontend-tutor/.env
+## ⚙️ Configuration (backend)
+
+Toutes les variables sont **optionnelles**. Sans clé côté serveur, chaque utilisateur branche la sienne dans ⚙ Paramètres.
+
+| Variable | Description |
+|---|---|
+| `GEMINI_API_KEY` | Clé Google AI Studio (prioritaire si plusieurs clés sont présentes) |
+| `OPENAI_API_KEY`, `ANTHROPIC_API_KEY`, `MISTRAL_API_KEY`, `GROQ_API_KEY`, `OPENROUTER_API_KEY`, `DEEPSEEK_API_KEY`, `XAI_API_KEY`, `PERPLEXITY_API_KEY` | Autres fournisseurs |
+| `LLM_API_KEY` / `LLM_PROVIDER` / `LLM_MODEL` / `LLM_BASE_URL` | Configuration générique : force un fournisseur, un modèle ou une URL |
+| `TAVILY_API_KEY` | Recherche Tavily (1 000 requêtes/mois gratuites) |
+| `BRAVE_API_KEY` | Brave Search API (offre gratuite) |
+| `SEARXNG_URL` | Instance SearXNG auto-hébergée (format JSON activé) |
+| `STACKEXCHANGE_KEY` | Augmente le quota de l'API Stack Exchange |
+| `ALLOW_CUSTOM_BASE_URL` | `true` pour autoriser Ollama ou une URL compatible OpenAI saisie dans l'interface |
+| `HTTPS_PROXY` / `NO_PROXY` | Proxy d'entreprise (utilisé seulement s'il est défini) |
+
+> Les fichiers `.env` utilisés par Kustomize ou Docker Compose s'écrivent **sans guillemets** : `GEMINI_API_KEY=AIza…`
+
+## 🚀 Lancer
+
+### Docker Compose
+```bash
+echo "GEMINI_API_KEY=AIza..." > .env
+docker compose up --build
+# http://localhost:8280
 ```
 
-3. **Lancer avec Docker Compose**
+### Kubernetes local (kind)
+Les manifests Kustomize (`kustomization.yaml`) génèrent le secret à partir de `.env`, plus des sondes et des limites de ressources.
 ```bash
-docker-compose up -d
+docker build -t madiyanke/devops-tutor-api:local devops-tutor
+docker build -t madiyanke/devops-tutor-web:local frontend-tutor
+kind load docker-image madiyanke/devops-tutor-api:local madiyanke/devops-tutor-web:local --name k8s101
+kubectl apply -k <dossier-des-manifests>
+kubectl rollout restart deploy -n dev
+kubectl port-forward -n dev svc/web 8080:80
 ```
 
-4. **Accéder à l'application**
-- Frontend : http://localhost:8080
-- Backend API : http://localhost:3003
-
-## 💻 Développement Local
-
-### Backend
-
+### Développement
 ```bash
-cd devops-tutor
-npm install
-npm run start:dev      # Mode développement
-npm run test           # Tests Jest
-npm run lint           # ESLint
+cd devops-tutor && npm ci && npm run start:dev      # API sur :3000
+cd frontend-tutor && npm ci && VITE_API_URL=http://localhost:3000 npm run dev
 ```
 
-### Frontend
+## 🔌 API
 
-```bash
-cd frontend-tutor
-npm install
-npm run dev            # Mode développement
-npm run test           # Tests Vitest
-npm run lint           # ESLint
+| Méthode | Route | Description |
+|---|---|---|
+| `POST` | `/tutor/ask/stream` | Réponse en Server-Sent Events : `meta`, `step`, `plan`, `sources`, `token`, `done`, `error` |
+| `POST` | `/tutor/ask` | Même pipeline, réponse JSON complète |
+| `GET` | `/tutor/config` | Fournisseurs, moteurs actifs, IA serveur (jamais les clés) |
+| `POST` | `/tutor/llm/test` | Vérifie qu'une clé et un modèle fonctionnent |
+| `POST` | `/tutor/llm/models` | Liste les modèles disponibles pour une clé |
+| `GET` | `/health`, `/metrics` | Sondes Kubernetes et métriques Prometheus (`tutor_questions_total`, `tutor_answer_duration_seconds`) |
+
+Corps de `/tutor/ask*` :
+```json
+{ "message": "…", "history": [{ "role": "user", "content": "…" }], "depth": "standard | deep",
+  "llm": { "provider": "auto", "apiKey": "…", "model": "…" } }
 ```
 
 ## 🧪 Tests
-
 ```bash
-# Backend (Jest)
-cd devops-tutor
-npm run test:ci        # Tests avec coverage
-
-# Frontend (Vitest)
-cd frontend-tutor
-npm run test:ci        # Tests avec coverage
+cd devops-tutor && npm run lint:ci && npm test && npm run test:e2e
+cd frontend-tutor && npm run lint:ci && npm run test:ci
 ```
 
-## 🚢 Déploiement
-
-Le pipeline CI/CD se déclenche automatiquement sur :
-- Push vers `main` ou `develop`
-- Pull Requests
-
-Les images Docker sont publiées sur Docker Hub :
-```bash
-docker pull YOUR_USERNAME/devops-tutor-api:latest
-docker pull YOUR_USERNAME/devops-tutor-web:latest
-```
-
-## 📚 Documentation
-
-- [CI/CD Pipeline](.github/README.md)
-- [Architecture] (À venir)
-- [API Documentation] (À venir)
-
-## 🤝 Contribution
-
-1. Fork le projet
-2. Créer une branche (`git checkout -b feature/amazing-feature`)
-3. Commit les changements (`git commit -m 'feat: add amazing feature'`)
-4. Push vers la branche (`git push origin feature/amazing-feature`)
-5. Ouvrir une Pull Request
-
-## 📝 License
-
-Ce projet est sous licence MIT.
-
-## 👨‍💻 Auteur
-
-Votre Nom - [GitHub](https://github.com/YOUR_USERNAME)
-
----
-
-**Made with ❤️ for DevOps Learning**
+## 🔐 Sécurité
+- Les clés fournies par l'utilisateur restent dans son navigateur et ne sont jamais journalisées ni stockées côté serveur.
+- Les pages lues sont filtrées : les adresses internes et privées sont refusées (protection SSRF).
+- Le Markdown produit par l'IA est assaini (DOMPurify) avant affichage.
+- Le contenu des sources est traité comme une donnée non fiable : les instructions qu'il contient sont ignorées par le prompt.

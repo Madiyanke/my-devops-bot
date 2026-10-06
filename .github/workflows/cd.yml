@@ -1,18 +1,51 @@
-name: CD Pipeline
+name: Deploy to Production
 
 on:
   push:
-    branches: [ main ]
+    branches: [main]
+  workflow_dispatch:
+
+# Un seul déploiement à la fois, jamais interrompu en cours de route.
+concurrency:
+  group: deploy-production
+  cancel-in-progress: false
+
+permissions:
+  contents: read
 
 jobs:
   # -----------------------------------------------------------
-  # JOB 1 : Build & Push (S'exécute sur les serveurs GitHub)
+  # 1. Intégration continue (lint, tests, build, scan)
+  # -----------------------------------------------------------
+  ci:
+    uses: ./.github/workflows/ci.yml
+
+  # -----------------------------------------------------------
+  # 2. Construction et publication des images (tag = SHA du commit)
   # -----------------------------------------------------------
   build-and-push:
+    name: Build & Push (${{ matrix.name }})
     runs-on: ubuntu-latest
+    needs: ci
+    strategy:
+      matrix:
+        include:
+          - name: api
+            context: ./devops-tutor
+          - name: web
+            context: ./frontend-tutor
+    outputs:
+      tag: ${{ steps.meta.outputs.sha_short }}
     steps:
-      - name: Checkout code
+      - name: Checkout repository
         uses: actions/checkout@v4
+
+      - name: Extract commit SHA short
+        id: meta
+        run: echo "sha_short=$(git rev-parse --short HEAD)" >> "$GITHUB_OUTPUT"
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
 
       - name: Login to Docker Hub
         uses: docker/login-action@v3
@@ -20,63 +53,97 @@ jobs:
           username: ${{ secrets.DOCKERHUB_USERNAME }}
           password: ${{ secrets.DOCKERHUB_TOKEN }}
 
-      - name: Build and push API
-        uses: docker/build-push-action@v5
+      - name: Build and push ${{ matrix.name }}
+        uses: docker/build-push-action@v6
         with:
-          context: ./devops-tutor
+          context: ${{ matrix.context }}
           push: true
-          tags: ${{ secrets.DOCKERHUB_USERNAME }}/devops-tutor-api:latest
-
-      - name: Build and push Frontend
-        uses: docker/build-push-action@v5
-        with:
-          context: ./frontend-tutor
-          push: true
-          tags: ${{ secrets.DOCKERHUB_USERNAME }}/devops-tutor-web:latest
+          platforms: linux/amd64
+          tags: |
+            ${{ secrets.DOCKERHUB_USERNAME }}/devops-tutor-${{ matrix.name }}:latest
+            ${{ secrets.DOCKERHUB_USERNAME }}/devops-tutor-${{ matrix.name }}:${{ steps.meta.outputs.sha_short }}
+          labels: |
+            org.opencontainers.image.source=${{ github.server_url }}/${{ github.repository }}
+            org.opencontainers.image.revision=${{ github.sha }}
+          cache-from: type=gha,scope=${{ matrix.name }}
+          cache-to: type=gha,mode=max,scope=${{ matrix.name }}
 
   # -----------------------------------------------------------
-  # JOB 2 : Deploy (S'exécute sur TON VPS via le Runner)
+  # 3. Déploiement sur le VPS (SSH) avec contrôle de santé et rollback
   # -----------------------------------------------------------
   deploy:
+    name: Deploy to VPS
+    runs-on: ubuntu-latest
     needs: build-and-push
-    runs-on: self-hosted
+    environment:
+      name: production
+      url: ${{ vars.APP_URL }}
     steps:
-      - name: Récupération de la config (Checkout)
+      - name: Checkout repository
         uses: actions/checkout@v4
 
-      - name: Déploiement sur le serveur
+      - name: Copy deployment files to VPS
+        uses: appleboy/scp-action@v0.1.7
+        with:
+          host: ${{ secrets.VPS_HOST }}
+          username: ${{ secrets.VPS_USERNAME }}
+          key: ${{ secrets.VPS_SSH_KEY }}
+          port: ${{ secrets.SSH_PORT || 22 }}
+          source: 'docker-compose.prod.yml,scripts/deploy.sh,prometheus/prometheus.yml,grafana/provisioning'
+          target: ${{ secrets.VPS_DEPLOY_PATH }}
+
+      - name: Generate .env and deploy
+        uses: appleboy/ssh-action@v1.0.3
         env:
-          DOCKER_USERNAME: ${{ secrets.DOCKERHUB_USERNAME }}
-          DOCKER_PASSWORD: ${{ secrets.DOCKERHUB_TOKEN }}
-          OPENAI_KEY: ${{ secrets.OPENAI_API_KEY }}
+          IMAGE_TAG: ${{ needs.build-and-push.outputs.tag }}
+          DOCKERHUB_USERNAME: ${{ secrets.DOCKERHUB_USERNAME }}
+          DOCKERHUB_TOKEN: ${{ secrets.DOCKERHUB_TOKEN }}
+          GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
+          TAVILY_API_KEY: ${{ secrets.TAVILY_API_KEY }}
+          BRAVE_API_KEY: ${{ secrets.BRAVE_API_KEY }}
+          OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
+          LLM_MODEL: ${{ vars.LLM_MODEL }}
+          GRAFANA_ADMIN_PASSWORD: ${{ secrets.GRAFANA_ADMIN_PASSWORD }}
+          WEB_PORT: ${{ vars.WEB_PORT || '8099' }}
+          WEB_BIND: ${{ vars.WEB_BIND || '0.0.0.0' }}
+        with:
+          host: ${{ secrets.VPS_HOST }}
+          username: ${{ secrets.VPS_USERNAME }}
+          key: ${{ secrets.VPS_SSH_KEY }}
+          port: ${{ secrets.SSH_PORT || 22 }}
+          envs: IMAGE_TAG,DOCKERHUB_USERNAME,DOCKERHUB_TOKEN,GEMINI_API_KEY,TAVILY_API_KEY,BRAVE_API_KEY,OPENAI_API_KEY,LLM_MODEL,GRAFANA_ADMIN_PASSWORD,WEB_PORT,WEB_BIND
+          script: |
+            set -euo pipefail
+            cd "${{ secrets.VPS_DEPLOY_PATH }}"
+
+            # 1. .env généré depuis les secrets GitHub (printf : aucun caractère réinterprété)
+            umask 077
+            {
+              printf 'DOCKERHUB_USERNAME=%s\n' "${DOCKERHUB_USERNAME:-}"
+              printf 'IMAGE_TAG=%s\n' "${IMAGE_TAG:-}"
+              printf 'WEB_PORT=%s\n' "${WEB_PORT:-}"
+              printf 'WEB_BIND=%s\n' "${WEB_BIND:-}"
+              printf 'GEMINI_API_KEY=%s\n' "${GEMINI_API_KEY:-}"
+              printf 'TAVILY_API_KEY=%s\n' "${TAVILY_API_KEY:-}"
+              printf 'BRAVE_API_KEY=%s\n' "${BRAVE_API_KEY:-}"
+              printf 'OPENAI_API_KEY=%s\n' "${OPENAI_API_KEY:-}"
+              printf 'LLM_MODEL=%s\n' "${LLM_MODEL:-}"
+              printf 'GRAFANA_ADMIN_PASSWORD=%s\n' "${GRAFANA_ADMIN_PASSWORD:-}"
+            } > .env
+
+            # 2. Authentification Docker Hub (évite les limites de téléchargement)
+            echo "$DOCKERHUB_TOKEN" | docker login -u "$DOCKERHUB_USERNAME" --password-stdin
+
+            # 3. Déploiement + contrôle de santé + rollback automatique
+            bash scripts/deploy.sh "$IMAGE_TAG"
+
+      - name: Public smoke test
+        if: vars.APP_URL != ''
         run: |
-          # 1. ACTIVATION DU PROXY 
-          export http_proxy=http://cache.univ-pau.fr:3128
-          export https_proxy=http://cache.univ-pau.fr:3128
-
-          echo "Démarrage du déploiement sur le VPS..."
-
-          # 2. Préparation des fichiers
-          # On remplace le docker-compose local par celui de prod
-          cp docker-compose.prod.yml docker-compose.yml
-
-          # 3. Génération du fichier .env pour les conteneurs
-          # IMPORTANT: docker-compose.prod.yml a besoin de DOCKER_USERNAME
-          echo "DOCKER_USERNAME=$DOCKER_USERNAME" > .env
-          echo "OPENAI_API_KEY=$OPENAI_KEY" >> .env
-          echo "HTTP_PROXY=http://cache.univ-pau.fr:3128" >> .env
-          echo "HTTPS_PROXY=http://cache.univ-pau.fr:3128" >> .env
-
-          # 4. Authentification Docker 
-          echo "$DOCKER_PASSWORD" | docker login -u "$DOCKER_USERNAME" --password-stdin
-
-          # 5. Mise à jour des images
-          docker compose pull
-
-          # 6. Redémarrage propre (Recrée les conteneurs avec la nouvelle config)
-          docker compose up -d --remove-orphans
-
-          # 7. Nettoyage des images inutilisées pour économiser l'espace disque
-          docker image prune -f
-          
-          echo "✅ Déploiement terminé avec succès !"
+          for _ in $(seq 1 10); do
+            if curl -fsS --max-time 10 "${{ vars.APP_URL }}/api/health"; then
+              echo; echo "✅ ${{ vars.APP_URL }} répond"; exit 0
+            fi
+            sleep 5
+          done
+          echo "❌ ${{ vars.APP_URL }}/api/health ne répond pas"; exit 1

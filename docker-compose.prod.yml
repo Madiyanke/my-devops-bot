@@ -1,84 +1,115 @@
-version: '3.8'
+# =============================================================================
+# DevOps Mentor — production (VPS)
+# Variables fournies par le .env généré par GitHub Actions (voir .github/workflows/cd.yml)
+# =============================================================================
+name: devops-tutor
+
+x-logging: &logging
+  driver: json-file
+  options:
+    max-size: "10m"
+    max-file: "3"
 
 services:
   # -----------------------------------------------------------------
-  # APPLICATION (Metier)
+  # APPLICATION
   # -----------------------------------------------------------------
   api:
-    image: ${DOCKER_USERNAME}/devops-tutor-api:latest
+    image: ${DOCKERHUB_USERNAME}/devops-tutor-api:${IMAGE_TAG:-latest}
     container_name: devops-tutor-api
-    ports:
-      - "3003:3000"
+    # Pas de port publié : l'API n'est joignable que via nginx (service web).
     environment:
-      - OPENAI_API_KEY=${OPENAI_API_KEY}
-      # Configuration Proxy pour NestJS (Vital pour l'UPPA)
-      - HTTP_PROXY=${HTTP_PROXY}
-      - HTTPS_PROXY=${HTTPS_PROXY}
-    restart: always
+      - NODE_ENV=production
+      - GEMINI_API_KEY=${GEMINI_API_KEY:-}
+      - OPENAI_API_KEY=${OPENAI_API_KEY:-}
+      - ANTHROPIC_API_KEY=${ANTHROPIC_API_KEY:-}
+      - GROQ_API_KEY=${GROQ_API_KEY:-}
+      - LLM_MODEL=${LLM_MODEL:-}
+      - TAVILY_API_KEY=${TAVILY_API_KEY:-}
+      - BRAVE_API_KEY=${BRAVE_API_KEY:-}
+      - ALLOW_CUSTOM_BASE_URL=false
+    restart: unless-stopped
+    mem_limit: 512m
+    logging: *logging
     networks:
       - app-network
 
   web:
-    image: ${DOCKER_USERNAME}/devops-tutor-web:latest
+    image: ${DOCKERHUB_USERNAME}/devops-tutor-web:${IMAGE_TAG:-latest}
     container_name: devops-tutor-web
     ports:
-      - "8099:80" # Port Frontend choisi (Modifié selon ton snippet)
+      # Le reverse proxy HTTPS du VPS redirige le domaine vers ce port.
+      - "${WEB_BIND:-0.0.0.0}:${WEB_PORT:-8099}:80"
     depends_on:
-      - api
-    restart: always
+      api:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://127.0.0.1/"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 5s
+    restart: unless-stopped
+    mem_limit: 128m
+    logging: *logging
     networks:
       - app-network
 
   # -----------------------------------------------------------------
-  # MONITORING (Observabilité)
+  # MONITORING
   # -----------------------------------------------------------------
-  
-  # 1. Prometheus : Le Cerveau (Collecte les métriques)
   prometheus:
-    image: prom/prometheus:latest
+    image: prom/prometheus:v3.5.0
     container_name: monitoring-prometheus
     volumes:
-      # On monte le fichier de config qu'on va créer juste après
-      - ./prometheus/prometheus.yml:/etc/prometheus/prometheus.yml
-      # On persiste les données pour ne pas perdre l'historique au reboot
+      - ./prometheus/prometheus.yml:/etc/prometheus/prometheus.yml:ro
       - prometheus_data:/prometheus
     command:
       - '--config.file=/etc/prometheus/prometheus.yml'
-    restart: always
+      - '--storage.tsdb.retention.time=15d'
+    restart: unless-stopped
+    logging: *logging
     networks:
       - app-network
 
-  # 2. Node Exporter : La Sonde (Surveille le VPS lui-même : CPU, RAM, Disque)
+  # Métriques du VPS lui-même (CPU, RAM, disque) via les montages de l'hôte
   node-exporter:
-    image: prom/node-exporter:latest
+    image: prom/node-exporter:v1.9.1
     container_name: monitoring-node-exporter
-    restart: always
+    command:
+      - '--path.procfs=/host/proc'
+      - '--path.sysfs=/host/sys'
+      - '--path.rootfs=/rootfs'
+      - '--collector.filesystem.mount-points-exclude=^/(sys|proc|dev|host|etc)($$|/)'
+    volumes:
+      - /proc:/host/proc:ro
+      - /sys:/host/sys:ro
+      - /:/rootfs:ro
+    restart: unless-stopped
+    logging: *logging
     networks:
       - app-network
 
-  # 3. Grafana : Le Tableau de Bord (Visualisation)
   grafana:
-    image: grafana/grafana:latest
+    image: grafana/grafana:12.1.1
     container_name: monitoring-grafana
     ports:
-      - "3004:3000" # Accès via http://IP_VPS:3004
+      # Accessible uniquement depuis le VPS : ssh -L 3004:127.0.0.1:3004 user@vps
+      - "127.0.0.1:3004:3000"
     environment:
       - GF_SECURITY_ADMIN_USER=admin
-      - GF_SECURITY_ADMIN_PASSWORD=admin 
-      - HTTP_PROXY=${HTTP_PROXY}
-      - HTTPS_PROXY=${HTTPS_PROXY}
-      - NO_PROXY=prometheus,api,node-exporter,localhost,127.0.0.1
+      - GF_SECURITY_ADMIN_PASSWORD=${GRAFANA_ADMIN_PASSWORD:-admin}
+      - GF_USERS_ALLOW_SIGN_UP=false
     volumes:
       - grafana_data:/var/lib/grafana
+      - ./grafana/provisioning:/etc/grafana/provisioning:ro
     depends_on:
       - prometheus
-    restart: always
+    restart: unless-stopped
+    logging: *logging
     networks:
       - app-network
 
-# -----------------------------------------------------------------
-# RESEAU & VOLUMES
-# -----------------------------------------------------------------
 networks:
   app-network:
     driver: bridge

@@ -1,195 +1,120 @@
-name: CI/CD Pipeline
+name: CI
 
+# Intégration continue : lint, tests et build.
+# - Automatique sur les pull requests et les branches autres que main.
+# - Sur main, elle est appelée par le workflow CD (workflow_call) avant tout déploiement.
 on:
-  push:
-    branches: [ main, develop ]
   pull_request:
-    branches: [ main ]
+    branches: [main]
+  push:
+    branches-ignore: [main]
   workflow_dispatch:
+  workflow_call:
+
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
 
 jobs:
   # ============================================
-  # JOB 1: Lint & Test Backend (NestJS + Jest)
+  # Backend : NestJS (lint, tests unitaires, e2e)
   # ============================================
-  backend-tests:
+  backend:
     name: Backend - Lint & Test
     runs-on: ubuntu-latest
-    
     defaults:
       run:
         working-directory: ./devops-tutor
-    
     steps:
-      - name: Checkout code
-        uses: actions/checkout@v4
-      
-      - name: Setup Node.js
-        uses: actions/setup-node@v4
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
         with:
           node-version: '22'
-      
+          cache: npm
+          cache-dependency-path: devops-tutor/package-lock.json
+
       - name: Install dependencies
         run: npm ci
-      
-      - name: Run ESLint
+
+      - name: Lint
         run: npm run lint:ci
-      
-      - name: Run tests with Jest
+
+      - name: Unit tests
         run: npm run test:ci
-      
-      - name: Upload coverage reports
-        uses: codecov/codecov-action@v4
-        if: always()
-        with:
-          files: ./devops-tutor/coverage/lcov.info
-          flags: backend
-          name: backend-coverage
-          token: ${{ secrets.CODECOV_TOKEN }}
-          fail_ci_if_error: false
+
+      - name: End-to-end tests
+        run: npm run test:e2e
+
+      - name: Build
+        run: npm run build
 
   # ============================================
-  # JOB 2: Lint & Test Frontend (Vue + Vitest)
+  # Frontend : Vue + Vitest + build PWA
   # ============================================
-  frontend-tests:
-    name: Frontend - Lint & Test
+  frontend:
+    name: Frontend - Lint, Test & Build
     runs-on: ubuntu-latest
-    
     defaults:
       run:
         working-directory: ./frontend-tutor
-    
     steps:
-      - name: Checkout code
-        uses: actions/checkout@v4
-      
-      - name: Setup Node.js
-        uses: actions/setup-node@v4
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
         with:
           node-version: '22'
-      
+          cache: npm
+          cache-dependency-path: frontend-tutor/package-lock.json
+
       - name: Install dependencies
         run: npm ci
-      
-      - name: Run ESLint
+
+      - name: Lint
         run: npm run lint:ci
-      
-      - name: Run tests with Vitest
+
+      - name: Tests
         run: npm run test:ci
-      
-      - name: Upload coverage reports
-        uses: codecov/codecov-action@v4
-        if: always()
-        with:
-          files: ./frontend-tutor/coverage/lcov.info
-          flags: frontend
-          name: frontend-coverage
-          token: ${{ secrets.CODECOV_TOKEN }}
-          fail_ci_if_error: false
+
+      - name: Build (PWA)
+        run: npm run build
 
   # ============================================
-  # JOB 3: Build Docker Images
+  # Images Docker : construction + scan de vulnérabilités (sans publication)
   # ============================================
-  build-images:
-    name: Build Docker Images
+  docker:
+    name: Docker - Build & Scan (${{ matrix.name }})
     runs-on: ubuntu-latest
-    needs: [backend-tests, frontend-tests]
-    
-    permissions:
-      contents: read
-      packages: write
-    
+    needs: [backend, frontend]
     strategy:
+      fail-fast: false
       matrix:
         include:
-          - name: backend
+          - name: api
             context: ./devops-tutor
-            dockerfile: ./devops-tutor/Dockerfile
-            image-name: devops-tutor-api
-          - name: frontend
+          - name: web
             context: ./frontend-tutor
-            dockerfile: ./frontend-tutor/Dockerfile
-            image-name: devops-tutor-web
-    
     steps:
-      - name: Checkout code
-        uses: actions/checkout@v4
-      
-      - name: Set up Docker Buildx
-        uses: docker/setup-buildx-action@v3
-      
-      - name: Login to Docker Hub
-        if: github.event_name != 'pull_request'
-        uses: docker/login-action@v3
-        with:
-          registry: docker.io
-          username: ${{ secrets.DOCKERHUB_USERNAME }}
-          password: ${{ secrets.DOCKERHUB_TOKEN }}
-      
-      - name: Extract metadata (tags, labels)
-        id: meta
-        uses: docker/metadata-action@v5
-        with:
-          images: ${{ secrets.DOCKERHUB_USERNAME }}/${{ matrix.image-name }}
-          tags: |
-            type=ref,event=branch
-            type=ref,event=pr
-            type=semver,pattern={{version}}
-            type=semver,pattern={{major}}.{{minor}}
-            type=raw,value=latest,enable={{is_default_branch}}
-            type=sha,prefix={{branch}}-
-      
-      - name: Build and push Docker image
-        id: build
-        uses: docker/build-push-action@v5
+      - uses: actions/checkout@v4
+
+      - uses: docker/setup-buildx-action@v3
+
+      - name: Build image
+        uses: docker/build-push-action@v6
         with:
           context: ${{ matrix.context }}
-          file: ${{ matrix.dockerfile }}
-          push: ${{ github.event_name != 'pull_request' }}
-          tags: ${{ steps.meta.outputs.tags }}
-          labels: ${{ steps.meta.outputs.labels }}
-          cache-from: type=gha
-          cache-to: type=gha,mode=max
-          platforms: linux/amd64,linux/arm64
-      
-      - name: Image digest
-        run: echo Image digest ${{ steps.build.outputs.digest }}
+          load: true
+          push: false
+          tags: devops-tutor-${{ matrix.name }}:ci
+          cache-from: type=gha,scope=${{ matrix.name }}
+          cache-to: type=gha,mode=max,scope=${{ matrix.name }}
 
-  # ============================================
-  # JOB 4: Security Scan (Optional but recommended)
-  # ============================================
-  security-scan:
-    name: Security Scan
-    runs-on: ubuntu-latest
-    needs: [build-images]
-    if: github.event_name != 'pull_request'
-    
-    permissions:
-      contents: read
-      security-events: write
-      actions: read
-    
-    strategy:
-      matrix:
-        include:
-          - name: backend
-            image-name: devops-tutor-api
-          - name: frontend
-            image-name: devops-tutor-web
-    
-    steps:
-      - name: Checkout code
-        uses: actions/checkout@v4
-      
-      - name: Run Trivy vulnerability scanner
-        uses: aquasecurity/trivy-action@master
-        with:
-          image-ref: ${{ secrets.DOCKERHUB_USERNAME }}/${{ matrix.image-name }}:latest
-          format: sarif
-          output: trivy-${{ matrix.name }}-results.sarif
-      
-      - name: Upload Trivy results to GitHub Security
-        uses: github/codeql-action/upload-sarif@v4
-        if: always()
-        with:
-          sarif_file: trivy-${{ matrix.name }}-results.sarif
-          category: ${{ matrix.name }}
+      # Image officielle épinglée ; rapport informatif qui ne bloque pas le pipeline.
+      - name: Trivy scan (CRITICAL / HIGH)
+        run: |
+          docker run --rm -v /var/run/docker.sock:/var/run/docker.sock \
+            aquasec/trivy:0.58.1 image --severity CRITICAL,HIGH --ignore-unfixed \
+            --exit-code 0 --no-progress devops-tutor-${{ matrix.name }}:ci

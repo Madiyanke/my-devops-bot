@@ -1,0 +1,5 @@
+# Les scripts et configs exécutés sous Linux (VPS, conteneurs) gardent des fins de ligne LF
+*.sh text eol=lf
+*.yml text eol=lf
+*.yaml text eol=lf
+*.conf text eol=lf

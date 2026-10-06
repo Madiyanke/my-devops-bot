@@ -1,13 +1,24 @@
 services:
-  # Service Backend
+  # Service Backend : recherche + synthèse IA
   api:
     build:
       context: ./devops-tutor
       dockerfile: Dockerfile
     ports:
-      - "3003:3000" 
+      - "3003:3000"
     environment:
-      - OPENAI_API_KEY=${OPENAI_API_KEY} 
+      # IA côté serveur (facultatif : chaque utilisateur peut aussi brancher sa clé dans l'interface)
+      - GEMINI_API_KEY=${GEMINI_API_KEY:-}
+      - OPENAI_API_KEY=${OPENAI_API_KEY:-}
+      - ANTHROPIC_API_KEY=${ANTHROPIC_API_KEY:-}
+      - LLM_PROVIDER=${LLM_PROVIDER:-}
+      - LLM_MODEL=${LLM_MODEL:-}
+      # Moteurs de recherche optionnels (gratuits avec inscription)
+      - TAVILY_API_KEY=${TAVILY_API_KEY:-}
+      - BRAVE_API_KEY=${BRAVE_API_KEY:-}
+      - SEARXNG_URL=${SEARXNG_URL:-}
+      # Autorise Ollama / API compatibles OpenAI sur une URL personnalisée
+      - ALLOW_CUSTOM_BASE_URL=${ALLOW_CUSTOM_BASE_URL:-true}
     networks:
       - app-network
 
@@ -17,9 +28,10 @@ services:
       context: ./frontend-tutor
       dockerfile: Dockerfile
     ports:
-      - "8080:80" 
+      - "8280:80"
     depends_on:
-      - api 
+      api:
+        condition: service_healthy
     networks:
       - app-network
 
