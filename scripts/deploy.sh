@@ -43,7 +43,7 @@ check_release() {
   # Test de bout en bout : nginx → API
   local port
   port=$(grep -E '^WEB_PORT=' .env | cut -d= -f2)
-  if ! curl -fsS --max-time 10 "http://127.0.0.1:${port:-8099}/api/health" >/dev/null; then
+  if ! curl -fsS --max-time 10 "http://127.0.0.1:${port:-8280}/api/health" >/dev/null; then
     echo "❌ /api/health injoignable via nginx"
     return 1
   fi
