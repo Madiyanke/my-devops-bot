@@ -66,7 +66,7 @@ done
 # 2. Vérification préalable : le port web doit être libre (ou déjà le nôtre),
 #    sinon on s'arrête AVANT de toucher aux services en place.
 WEB_PORT_VALUE=$(grep -E '^WEB_PORT=' .env | cut -d= -f2)
-WEB_PORT_VALUE=${WEB_PORT_VALUE:-8099}
+WEB_PORT_VALUE=${WEB_PORT_VALUE:-8280}
 log "Vérification du port ${WEB_PORT_VALUE}"
 holder=$(docker ps --format '{{.Names}}' --filter "publish=${WEB_PORT_VALUE}" | grep -v '^devops-tutor-web$' || true)
 if [[ -n "$holder" ]]; then

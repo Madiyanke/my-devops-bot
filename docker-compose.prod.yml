@@ -39,7 +39,7 @@ services:
     container_name: devops-tutor-web
     ports:
       # Le reverse proxy HTTPS du VPS redirige le domaine vers ce port.
-      - "${WEB_BIND:-0.0.0.0}:${WEB_PORT:-8099}:80"
+      - "${WEB_BIND:-0.0.0.0}:${WEB_PORT:-8280}:80"
     depends_on:
       api:
         condition: service_healthy
