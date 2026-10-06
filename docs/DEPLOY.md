@@ -46,7 +46,7 @@ Dans le dépôt : **Settings → Secrets and variables → Actions**.
 | Nom | Défaut | Rôle |
 |---|---|---|
 | `APP_URL` | — | URL publique (ex. `https://tdevops.hamidnd.me`) : active le test de fumée final et le lien dans l'onglet *Environments* |
-| `WEB_PORT` | `8099` | Port de l'application sur le VPS |
+| `WEB_PORT` | `8280` | Port de l'application sur le VPS |
 | `WEB_BIND` | `0.0.0.0` | Mettre `127.0.0.1` si ton reverse proxy tourne **directement sur l'hôte** (le port n'est alors plus exposé sur Internet) |
 | `LLM_MODEL` | `gemini-2.5-flash` | Forcer un autre modèle |
 
@@ -93,15 +93,15 @@ Les anciens conteneurs (`devops-tutor-api`, `monitoring-grafana`…) sont rempla
 
 ## 3. HTTPS (indispensable pour la PWA)
 
-Configuration utilisée : **Cloudflare** (DNS + certificat) devant **nginx** sur le VPS, qui redirige vers l'application sur `127.0.0.1:8190`.
+Configuration utilisée : **Cloudflare** (DNS + certificat) devant **nginx** sur le VPS, qui redirige vers l'application sur `127.0.0.1:8280`.
 
-1. **Variables GitHub** : `WEB_PORT=8190` et `WEB_BIND=127.0.0.1`.
+1. **Variables GitHub** : `WEB_PORT=8280` et `WEB_BIND=127.0.0.1`.
 2. **Cloudflare → DNS** : enregistrement `A` `tdevops` → IP du VPS, **proxy activé** (nuage orange).
 3. **Cloudflare → SSL/TLS** : mode **Full (strict)**, avec le certificat d'origine Cloudflare déjà installé dans `/etc/nginx/ssl/`.
 4. **nginx** : fichier `/etc/nginx/sites-available/tdevops.hamidnd.me` :
 
 ```nginx
-# DevOps Mentor : tdevops.hamidnd.me → conteneur web (127.0.0.1:8190)
+# DevOps Mentor : tdevops.hamidnd.me → conteneur web (127.0.0.1:8280)
 server {
     listen 80;
     listen [::]:80;
@@ -122,7 +122,7 @@ server {
     client_max_body_size 1m;
 
     location / {
-        proxy_pass         http://127.0.0.1:8190;
+        proxy_pass         http://127.0.0.1:8280;
         proxy_http_version 1.1;
         proxy_set_header   Host $host;
         proxy_set_header   Connection "";
@@ -199,7 +199,7 @@ puis http://localhost:3004 (utilisateur `admin`, mot de passe = `GRAFANA_ADMIN_P
 | `deploy` : *permission denied … docker.sock* | Utilisateur hors du groupe `docker` | `sudo usermod -aG docker <user>`, puis reconnexion |
 | `deploy` : *cd: … No such file* | Dossier inexistant | `mkdir -p` + `chown` (étape 2) |
 | *Le port … est déjà utilisé* / *port is already allocated* | Un autre service occupe ce port : le script s'arrête sans rien toucher | `sudo ss -ltnp 'sport = :<port>'` ; changer la variable `WEB_PORT` et le `proxy_pass` nginx |
-| Erreur Cloudflare 521 / 502 | nginx ne joint pas l'application | `curl -I http://127.0.0.1:8190` sur le VPS ; vérifier `WEB_PORT` = port du `proxy_pass` |
+| Erreur Cloudflare 521 / 502 | nginx ne joint pas l'application | `curl -I http://127.0.0.1:8280` sur le VPS ; vérifier `WEB_PORT` = port du `proxy_pass` |
 | Erreur Cloudflare 526 | Certificat d'origine invalide en mode Full (strict) | Vérifier `/etc/nginx/ssl/cert.pem` et `key.pem` |
 | `↩️ Version … restaurée` | La nouvelle version ne démarre pas : la production reste sur l'ancienne | Lire les « Logs API » affichés dans le job |
 | L'app répond mais « Aucune IA configurée » | Secret `GEMINI_API_KEY` absent ou mal nommé | Vérifier le nom exact, puis relancer le workflow |
