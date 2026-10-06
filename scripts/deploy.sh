@@ -63,14 +63,34 @@ for name in devops-tutor-api devops-tutor-web monitoring-prometheus monitoring-n
   fi
 done
 
-# 2. Nouvelle version
+# 2. Vérification préalable : le port web doit être libre (ou déjà le nôtre),
+#    sinon on s'arrête AVANT de toucher aux services en place.
+WEB_PORT_VALUE=$(grep -E '^WEB_PORT=' .env | cut -d= -f2)
+WEB_PORT_VALUE=${WEB_PORT_VALUE:-8099}
+log "Vérification du port ${WEB_PORT_VALUE}"
+holder=$(docker ps --format '{{.Names}}' --filter "publish=${WEB_PORT_VALUE}" | grep -v '^devops-tutor-web$' || true)
+if [[ -n "$holder" ]]; then
+  echo "❌ Le port ${WEB_PORT_VALUE} est déjà utilisé par le conteneur : ${holder}"
+  echo "   Choisis un autre port (variable GitHub WEB_PORT) ou libère celui-ci."
+  exit 1
+fi
+if ! docker ps --format '{{.Names}}' --filter "publish=${WEB_PORT_VALUE}" | grep -q '^devops-tutor-web$' \
+   && ss -ltnH "sport = :${WEB_PORT_VALUE}" 2>/dev/null | grep -q .; then
+  echo "❌ Le port ${WEB_PORT_VALUE} est déjà utilisé par un processus de l'hôte :"
+  ss -ltnpH "sport = :${WEB_PORT_VALUE}" 2>/dev/null || true
+  echo "   Choisis un autre port (variable GitHub WEB_PORT) ou libère celui-ci."
+  exit 1
+fi
+echo "✅ Port ${WEB_PORT_VALUE} disponible"
+
+# 3. Nouvelle version
 PREVIOUS_TAG=$(cat "$STATE_FILE" 2>/dev/null || true)
 set_tag "$NEW_TAG"
 
 log "Téléchargement des images"
 "${COMPOSE[@]}" pull
 
-# 3. Démarrage + contrôle de santé. Tout échec (y compris un conteneur qui ne
+# 4. Démarrage + contrôle de santé. Tout échec (y compris un conteneur qui ne
 #    démarre pas pendant « up ») déclenche le retour à la version précédente.
 log "Démarrage des services et contrôle de santé"
 if "${COMPOSE[@]}" up -d --remove-orphans && check_release; then
@@ -91,7 +111,7 @@ else
   exit 1
 fi
 
-# 4. État et nettoyage
+# 5. État et nettoyage
 log "État des services"
 "${COMPOSE[@]}" ps
 docker image prune -f >/dev/null

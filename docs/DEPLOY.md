@@ -93,37 +93,61 @@ Les anciens conteneurs (`devops-tutor-api`, `monitoring-grafana`…) sont rempla
 
 ## 3. HTTPS (indispensable pour la PWA)
 
-1. **DNS** : crée un enregistrement `A` `tdevops.hamidnd.me` qui pointe vers l'IP du VPS.
-2. **Reverse proxy** : redirige le domaine vers `127.0.0.1:8099`. Le streaming des réponses exige de **désactiver le buffering**.
+Configuration utilisée : **Cloudflare** (DNS + certificat) devant **nginx** sur le VPS, qui redirige vers l'application sur `127.0.0.1:8190`.
 
-**Caddy** (certificat HTTPS automatique) :
-```caddy
-tdevops.hamidnd.me {
-    reverse_proxy 127.0.0.1:8099 {
-        flush_interval -1
-    }
-}
-```
+1. **Variables GitHub** : `WEB_PORT=8190` et `WEB_BIND=127.0.0.1`.
+2. **Cloudflare → DNS** : enregistrement `A` `tdevops` → IP du VPS, **proxy activé** (nuage orange).
+3. **Cloudflare → SSL/TLS** : mode **Full (strict)**, avec le certificat d'origine Cloudflare déjà installé dans `/etc/nginx/ssl/`.
+4. **nginx** : fichier `/etc/nginx/sites-available/tdevops.hamidnd.me` :
 
-**nginx + certbot** :
 ```nginx
+# DevOps Mentor : tdevops.hamidnd.me → conteneur web (127.0.0.1:8190)
 server {
-    server_name tdevops.hamidnd.me;
-    location / {
-        proxy_pass http://127.0.0.1:8099;
-        proxy_http_version 1.1;
-        proxy_set_header Host $host;
-        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
-        proxy_set_header X-Forwarded-Proto $scheme;
-        proxy_buffering off;          # streaming (SSE)
-        proxy_read_timeout 300s;
-    }
     listen 80;
+    listen [::]:80;
+    server_name tdevops.hamidnd.me;
+    return 301 https://$host$request_uri;
+}
+
+server {
+    listen 443 ssl;
+    listen [::]:443 ssl;
+    http2 on;
+    server_name tdevops.hamidnd.me;
+
+    # Certificat d'origine Cloudflare (wildcard *.hamidnd.me)
+    ssl_certificate     /etc/nginx/ssl/cert.pem;
+    ssl_certificate_key /etc/nginx/ssl/key.pem;
+
+    client_max_body_size 1m;
+
+    location / {
+        proxy_pass         http://127.0.0.1:8190;
+        proxy_http_version 1.1;
+        proxy_set_header   Host $host;
+        proxy_set_header   Connection "";
+        proxy_set_header   X-Real-IP $remote_addr;
+        proxy_set_header   X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header   X-Forwarded-Proto https;
+
+        # Streaming des réponses (Server-Sent Events) : aucun tampon
+        proxy_buffering    off;
+        proxy_cache        off;
+
+        # Recherche + génération : jusqu'à quelques minutes
+        proxy_read_timeout 300s;
+        proxy_send_timeout 300s;
+    }
 }
 ```
-puis `sudo certbot --nginx -d tdevops.hamidnd.me`.
 
-Si le reverse proxy est sur l'hôte, ajoute la variable `WEB_BIND=127.0.0.1`. Le port 8099 ne sera alors plus joignable directement depuis Internet.
+Activation :
+```bash
+sudo ln -s /etc/nginx/sites-available/tdevops.hamidnd.me /etc/nginx/sites-enabled/
+sudo nginx -t && sudo systemctl reload nginx
+```
+
+> Cloudflare coupe une requête si l'origine ne répond rien pendant 100 s (erreur 524). L'API envoie ses en-têtes immédiatement, puis un signal toutes les 15 s pendant le streaming : la limite n'est donc pas atteinte.
 
 ---
 
@@ -174,7 +198,9 @@ puis http://localhost:3004 (utilisateur `admin`, mot de passe = `GRAFANA_ADMIN_P
 | `deploy` : *ssh: handshake failed* / *unable to authenticate* | Clé privée incomplète, ou clé publique absente du VPS | Recopier toute la clé privée ; vérifier `authorized_keys` |
 | `deploy` : *permission denied … docker.sock* | Utilisateur hors du groupe `docker` | `sudo usermod -aG docker <user>`, puis reconnexion |
 | `deploy` : *cd: … No such file* | Dossier inexistant | `mkdir -p` + `chown` (étape 2) |
-| *port is already allocated* | Le port 8099 est déjà pris par un autre service | Variable `WEB_PORT` (ex. `8100`) et adapter le reverse proxy |
+| *Le port … est déjà utilisé* / *port is already allocated* | Un autre service occupe ce port : le script s'arrête sans rien toucher | `sudo ss -ltnp 'sport = :<port>'` ; changer la variable `WEB_PORT` et le `proxy_pass` nginx |
+| Erreur Cloudflare 521 / 502 | nginx ne joint pas l'application | `curl -I http://127.0.0.1:8190` sur le VPS ; vérifier `WEB_PORT` = port du `proxy_pass` |
+| Erreur Cloudflare 526 | Certificat d'origine invalide en mode Full (strict) | Vérifier `/etc/nginx/ssl/cert.pem` et `key.pem` |
 | `↩️ Version … restaurée` | La nouvelle version ne démarre pas : la production reste sur l'ancienne | Lire les « Logs API » affichés dans le job |
 | L'app répond mais « Aucune IA configurée » | Secret `GEMINI_API_KEY` absent ou mal nommé | Vérifier le nom exact, puis relancer le workflow |
 | Réponses qui arrivent d'un bloc, ou coupées | Buffering du reverse proxy | `proxy_buffering off` (nginx) ou `flush_interval -1` (Caddy) |
