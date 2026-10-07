@@ -33,7 +33,8 @@ export const PROVIDERS: Record<ProviderId, ProviderInfo> = {
     label: 'Google Gemini',
     kind: 'gemini',
     baseUrl: 'https://generativelanguage.googleapis.com/v1beta',
-    defaultModel: 'gemini-2.5-flash',
+    // Alias maintenu par Google vers le modèle « flash » courant.
+    defaultModel: 'gemini-flash-latest',
     requiresKey: true,
     envKeys: ['GEMINI_API_KEY', 'GOOGLE_API_KEY'],
     keyHint: 'AIza…',

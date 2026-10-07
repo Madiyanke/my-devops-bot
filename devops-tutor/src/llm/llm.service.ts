@@ -1,4 +1,5 @@
-import { Injectable } from '@nestjs/common';
+import { createHash } from 'node:crypto';
+import { Injectable, Logger } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import type { Response } from 'undici';
 import { httpFetch, readSseData } from '../common/http';
@@ -11,6 +12,7 @@ import {
   type ProviderId,
 } from './llm.catalog';
 import { LlmError, errorFromResponse, toLlmError } from './llm.errors';
+import { pickBestModel, suggestedModel } from './llm.models';
 
 export interface ChatMessage {
   role: 'user' | 'assistant';
@@ -30,6 +32,8 @@ export interface LlmConfig {
   model: string;
   baseUrl: string;
   source: 'server' | 'client';
+  /** Modèle par défaut (non choisi explicitement) : remplaçable automatiquement s'il disparaît. */
+  autoModel?: boolean;
 }
 
 export interface LlmRequest {
@@ -67,7 +71,28 @@ const trimSlash = (url: string) => url.replace(/\/+$/, '');
 
 @Injectable()
 export class LlmService {
+  private readonly logger = new Logger(LlmService.name);
+  /** Modèles de remplacement découverts, par fournisseur + clé (en mémoire). */
+  private readonly replacements = new Map<string, string>();
+
   constructor(private readonly config: ConfigService) {}
+
+  private cacheKey(
+    cfg: Pick<LlmConfig, 'provider' | 'baseUrl' | 'apiKey'>,
+  ): string {
+    const key = createHash('sha256')
+      .update(cfg.apiKey ?? '')
+      .digest('hex')
+      .slice(0, 16);
+    return `${cfg.provider}|${cfg.baseUrl}|${key}`;
+  }
+
+  /** Applique le modèle de remplacement déjà découvert, le cas échéant. */
+  private withReplacement(cfg: LlmConfig): LlmConfig {
+    if (!cfg.autoModel) return cfg;
+    const model = this.replacements.get(this.cacheKey(cfg));
+    return model ? { ...cfg, model } : cfg;
+  }
 
   /** Lit une variable d'env en ignorant les placeholders non substitués (${VAR}). */
   private env(key: string): string | undefined {
@@ -115,15 +140,17 @@ export class LlmService {
 
     const info = PROVIDERS[provider];
     const baseUrl = this.env('LLM_BASE_URL') ?? info.baseUrl;
-    const model = this.env('LLM_MODEL') ?? info.defaultModel;
+    const explicitModel = this.env('LLM_MODEL');
+    const model = explicitModel ?? info.defaultModel;
     if ((info.requiresKey && !apiKey) || !baseUrl || !model) return null;
-    return {
+    return this.withReplacement({
       provider,
       apiKey,
       model,
       baseUrl: trimSlash(baseUrl),
       source: 'server',
-    };
+      autoModel: !explicitModel,
+    });
   }
 
   /** Choisit la configuration : clé fournie par l'utilisateur, sinon celle du serveur. */
@@ -144,7 +171,7 @@ export class LlmService {
           'Aucune IA configurée : ajoutez votre clé API dans ⚙ Paramètres, ou définissez GEMINI_API_KEY (ou LLM_API_KEY) côté serveur.',
         );
       }
-      return { ...server, model: model ?? server.model };
+      return model ? { ...server, model, autoModel: false } : server;
     }
 
     const provider = wanted ?? detectProvider(apiKey ?? '');
@@ -159,7 +186,7 @@ export class LlmService {
     if (info.requiresKey && !apiKey) {
       const server = this.serverConfig();
       if (server?.provider === provider) {
-        return { ...server, model: model ?? server.model };
+        return model ? { ...server, model, autoModel: false } : server;
       }
       throw new LlmError(
         'missing_key',
@@ -186,13 +213,14 @@ export class LlmService {
         `Indiquez le nom du modèle pour ${info.label}.`,
       );
     }
-    return {
+    return this.withReplacement({
       provider,
       apiKey,
       model: finalModel,
       baseUrl: trimSlash(finalBaseUrl),
       source: 'client',
-    };
+      autoModel: !model,
+    });
   }
 
   label(cfg: LlmConfig): string {
@@ -208,7 +236,24 @@ export class LlmService {
     } catch (error) {
       throw toLlmError(error, label);
     }
-    if (!res.ok) throw await errorFromResponse(res, label, cfg.model);
+    if (!res.ok) {
+      const error = await errorFromResponse(res, label, cfg.model);
+      // Modèle par défaut retiré par le fournisseur : on bascule sur un modèle
+      // disponible, une seule fois, avant que le moindre texte ait été produit.
+      const replacement =
+        error.code === 'model_not_found' && cfg.autoModel
+          ? await this.findReplacement(cfg, error.message)
+          : null;
+      if (!replacement) throw error;
+      this.logger.warn(
+        `${label} : « ${cfg.model} » indisponible, bascule sur « ${replacement} »`,
+      );
+      this.replacements.set(this.cacheKey(cfg), replacement);
+      cfg.model = replacement;
+      cfg.autoModel = false;
+      yield* this.stream(cfg, req);
+      return;
+    }
 
     try {
       for await (const data of readSseData(res)) {
@@ -218,6 +263,32 @@ export class LlmService {
     } catch (error) {
       throw toLlmError(error, label);
     }
+  }
+
+  /** Remplaçant recommandé par le fournisseur, sinon le meilleur modèle listé. */
+  private async findReplacement(
+    cfg: LlmConfig,
+    message: string,
+  ): Promise<string | null> {
+    let models: string[] = [];
+    try {
+      models = await this.listModels(cfg);
+    } catch {
+      // liste indisponible : on se contente de la recommandation du message
+    }
+    const suggested = suggestedModel(message);
+    if (
+      suggested &&
+      suggested !== cfg.model &&
+      (models.length === 0 || models.includes(suggested))
+    ) {
+      return suggested;
+    }
+    const best = pickBestModel(
+      cfg.provider,
+      models.filter((m) => m !== cfg.model),
+    );
+    return best && best !== cfg.model ? best : null;
   }
 
   async complete(cfg: LlmConfig, req: LlmRequest): Promise<string> {

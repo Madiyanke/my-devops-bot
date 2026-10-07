@@ -60,7 +60,43 @@ describe('LlmService.stream (protocoles)', () => {
           res.end(JSON.stringify({ error: { message: 'quota exceeded' } }));
           return;
         }
-        const events = FIXTURES[path];
+        // Faux Gemini dont le modèle par défaut a été retiré
+        if (path === '/retired/models') {
+          res.writeHead(200, { 'content-type': 'application/json' });
+          res.end(
+            JSON.stringify({
+              models: ['gemini-new-flash', 'gemini-new-flash-lite'].map(
+                (m) => ({
+                  name: `models/${m}`,
+                  supportedGenerationMethods: ['generateContent'],
+                }),
+              ),
+            }),
+          );
+          return;
+        }
+        if (
+          path.startsWith('/retired/') &&
+          !path.includes('gemini-new-flash:')
+        ) {
+          res.writeHead(404, { 'content-type': 'application/json' });
+          res.end(
+            JSON.stringify({
+              error: {
+                message:
+                  'This model is no longer available to new users. Please update your code to use models/gemini-new-flash.',
+              },
+            }),
+          );
+          return;
+        }
+        const events =
+          FIXTURES[
+            path.replace(
+              '/retired/models/gemini-new-flash',
+              '/gemini/models/gemini-test',
+            )
+          ];
         if (!events) {
           res.writeHead(404).end();
           return;
@@ -134,6 +170,37 @@ describe('LlmService.stream (protocoles)', () => {
     const llm = serviceFor('openai', '/unknown', 'gpt-test');
     await expect(llm.complete(llm.resolve(), ask)).rejects.toMatchObject({
       code: 'model_not_found',
+    });
+  });
+
+  describe('modèle par défaut retiré', () => {
+    const serviceWith = (env: Record<string, string>) =>
+      new LlmService({
+        get: (key: string) => env[key],
+      } as unknown as ConfigService);
+
+    it('bascule automatiquement sur le modèle recommandé et le mémorise', async () => {
+      const llm = serviceWith({
+        GEMINI_API_KEY: 'k',
+        LLM_BASE_URL: `${base}/retired`,
+      });
+      const cfg = llm.resolve();
+      expect(cfg.model).toBe('gemini-flash-latest');
+      expect(await llm.complete(cfg, ask)).toBe('Bonjour Gemini');
+      expect(cfg.model).toBe('gemini-new-flash');
+      // Les requêtes suivantes utilisent directement le remplaçant.
+      expect(llm.resolve().model).toBe('gemini-new-flash');
+    });
+
+    it('ne remplace pas un modèle choisi explicitement', async () => {
+      const llm = serviceWith({
+        GEMINI_API_KEY: 'k',
+        LLM_BASE_URL: `${base}/retired`,
+        LLM_MODEL: 'gemini-old',
+      });
+      await expect(llm.complete(llm.resolve(), ask)).rejects.toMatchObject({
+        code: 'model_not_found',
+      });
     });
   });
 });

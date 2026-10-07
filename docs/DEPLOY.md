@@ -48,7 +48,7 @@ Dans le dépôt : **Settings → Secrets and variables → Actions**.
 | `APP_URL` | — | URL publique (ex. `https://tdevops.hamidnd.me`) : active le test de fumée final et le lien dans l'onglet *Environments* |
 | `WEB_PORT` | `8280` | Port de l'application sur le VPS |
 | `WEB_BIND` | `0.0.0.0` | Mettre `127.0.0.1` si ton reverse proxy tourne **directement sur l'hôte** (le port n'est alors plus exposé sur Internet) |
-| `LLM_MODEL` | `gemini-2.5-flash` | Forcer un autre modèle |
+| `LLM_MODEL` | `gemini-flash-latest` (automatique) | Forcer un modèle précis. Sans cette variable, si le modèle par défaut est retiré par Google, l'API bascule seule sur le modèle recommandé |
 
 ---
 

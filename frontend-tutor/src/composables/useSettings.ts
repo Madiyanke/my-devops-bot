@@ -67,7 +67,7 @@ const effectiveProvider = computed(() =>
       : detectProvider(settings.apiKey),
 );
 
-/** Libellé affiché dans l'interface : « Gemini · gemini-2.5-flash ». */
+/** Libellé affiché dans l'interface : « Gemini · gemini-flash-latest ». */
 const activeModelLabel = computed(() => {
   const providers = serverConfig.value?.providers ?? [];
   const id = effectiveProvider.value;

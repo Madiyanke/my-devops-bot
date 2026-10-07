@@ -82,13 +82,16 @@ export class TutorService {
 
     try {
       cfg = this.llm.resolve(dto.llm);
-      emit({
-        type: 'meta',
-        provider: cfg.provider,
-        providerLabel: this.llm.label(cfg),
-        model: cfg.model,
-        depth,
-      });
+      const announce = (c: LlmConfig) =>
+        emit({
+          type: 'meta',
+          provider: c.provider,
+          providerLabel: this.llm.label(c),
+          model: c.model,
+          depth,
+        });
+      announce(cfg);
+      const initialModel = cfg.model;
 
       // 1. Planification des recherches
       let t = Date.now();
@@ -116,6 +119,8 @@ export class TutorService {
           ? `${plan.queries.length} requête(s) · niveau ${plan.level}`
           : 'Aucune recherche nécessaire',
       });
+      // Le modèle par défaut a pu être remplacé automatiquement pendant la planification.
+      if (cfg.model !== initialModel) announce(cfg);
 
       // 2. Recherche + 3. Lecture
       let sources: Source[] = [];

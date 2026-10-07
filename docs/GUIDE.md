@@ -68,7 +68,7 @@ Tu peux supprimer la ligne `OPEN_AI_KEY=…` : ce compte OpenAI n'a plus de cré
 GEMINI_API_KEY=AIzaTaCle
 ```
 
-**Vérifier** : dans les logs de l'API, tu dois voir `IA serveur : Google Gemini (gemini-2.5-flash)`.
+**Vérifier** : dans les logs de l'API, tu dois voir `IA serveur : Google Gemini (gemini-flash-latest)`.
 ```powershell
 kubectl logs deploy/tutor-devops-api-deployment -n dev | Select-String Bootstrap
 ```
